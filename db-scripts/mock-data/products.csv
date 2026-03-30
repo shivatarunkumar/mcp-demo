@@ -1,0 +1,13 @@
+id,name,category,price,stock
+1,Wireless Mouse,Electronics,29.99,150
+2,USB-C Hub,Electronics,49.99,80
+3,Mechanical Keyboard,Electronics,89.99,60
+4,Monitor Stand,Office,34.99,100
+5,Notebook Set,Stationery,12.99,200
+6,Ballpoint Pens (10pk),Stationery,6.99,300
+7,Desk Lamp,Office,24.99,90
+8,Running Shoes,Footwear,74.99,50
+9,Cotton T-Shirt,Clothing,19.99,120
+10,Backpack,Accessories,54.99,70
+11,Water Bottle,Accessories,14.99,180
+12,Bluetooth Earbuds,Electronics,39.99,65
