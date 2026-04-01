@@ -136,9 +136,10 @@ class NL2SQLRequest(BaseModel):
 class NL2SQLResponse(BaseModel):
     question: str
     sql: str
-    columns: list[str]
-    rows: list[dict]
-    row_count: int
+    columns: list[str] = []
+    rows: list[dict] = []
+    row_count: int = 0
+    error: str | None = None
 
 
 # ── DB Schema introspection ────────────────────────────────────────────────────

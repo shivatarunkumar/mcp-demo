@@ -10,10 +10,9 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
+import { useTheme, type Theme } from '../context/ThemeContext';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
-
-const TABLE_COLOR = { bg: '#ede9fe', border: '#6366f1', text: '#4f46e5' };
 
 interface ColumnInfo {
   name: string;
@@ -40,6 +39,9 @@ interface Props {
 }
 
 export default function DBSchemaPanel({ onSelectTable }: Props) {
+  const { theme: t } = useTheme();
+  const s = makeStyles(t);
+
   const [databases, setDatabases] = useState<string[]>([]);
   const [selectedDb, setSelectedDb] = useState<string | null>(null);
   const [dbMenuOpen, setDbMenuOpen] = useState(false);
@@ -52,30 +54,30 @@ export default function DBSchemaPanel({ onSelectTable }: Props) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Fetch available databases once
   useEffect(() => {
     fetch(`${BASE_URL}/query/databases`)
       .then((r) => r.json())
-      .then((list: string[]) => {
-        setDatabases(list);
-      })
+      .then((list: string[]) => setDatabases(list))
       .catch(() => {});
   }, []);
 
-  // Fetch schema whenever selectedDb or refreshKey changes
   useEffect(() => {
     setLoading(true);
     setError(null);
+    setSchema(null);
     const url = selectedDb
       ? `${BASE_URL}/query/schema?db_name=${encodeURIComponent(selectedDb)}`
       : `${BASE_URL}/query/schema`;
     fetch(url)
-      .then((r) => r.json())
-      .then((d: SchemaResponse) => {
+      .then(async (r) => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail ?? `Error ${r.status}`);
+        return data as SchemaResponse;
+      })
+      .then((d) => {
         setSchema(d);
-        if (d.tables?.length > 0) {
-          setExpanded({ [d.tables[0].name]: true });
-        }
+        if (d.tables?.length > 0) setExpanded({ [d.tables[0].name]: true });
+        else setExpanded({});
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -92,58 +94,46 @@ export default function DBSchemaPanel({ onSelectTable }: Props) {
   };
 
   return (
-    <View style={styles.panel}>
+    <View style={s.panel}>
       {/* ── Header ── */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <View style={styles.pgLogo}>
-            <Text style={styles.pgLogoText}>DB</Text>
+      <View style={s.header}>
+        <View style={s.headerLeft}>
+          <View style={s.pgLogo}>
+            <Text style={s.pgLogoText}>DB</Text>
           </View>
           <View ref={dbBtnRef}>
-            <TouchableOpacity style={styles.dbBtn} onPress={openDbMenu} activeOpacity={0.7}>
-              <Text style={styles.dbBtnText} numberOfLines={1}>
+            <TouchableOpacity style={s.dbBtn} onPress={openDbMenu} activeOpacity={0.7}>
+              <Text style={s.dbBtnText} numberOfLines={1}>
                 {schema?.database ?? selectedDb ?? '…'}
               </Text>
-              <View style={styles.dbBtnChevron} />
+              <View style={s.dbBtnChevron} />
             </TouchableOpacity>
           </View>
         </View>
-        <TouchableOpacity
-          onPress={() => setRefreshKey((k) => k + 1)}
-          style={styles.refreshBtn}
-        >
-          <Text style={styles.refreshIcon}>↻</Text>
+        <TouchableOpacity onPress={() => setRefreshKey((k) => k + 1)} style={s.refreshBtn}>
+          <Text style={s.refreshIcon}>↻</Text>
         </TouchableOpacity>
       </View>
 
       {/* ── DB dropdown modal ── */}
-      <Modal
-        transparent
-        visible={dbMenuOpen}
-        animationType="none"
-        onRequestClose={() => setDbMenuOpen(false)}
-      >
+      <Modal transparent visible={dbMenuOpen} animationType="none" onRequestClose={() => setDbMenuOpen(false)}>
         <TouchableWithoutFeedback onPress={() => setDbMenuOpen(false)}>
           <View style={StyleSheet.absoluteFill}>
-            <View style={[styles.dbMenu, { top: dbMenuPos.top, left: dbMenuPos.left }]}>
-              <Text style={styles.dbMenuTitle}>SWITCH DATABASE</Text>
+            <View style={[s.dbMenu, { top: dbMenuPos.top, left: dbMenuPos.left }]}>
+              <Text style={s.dbMenuTitle}>SWITCH DATABASE</Text>
               {databases.map((db) => {
                 const active = db === (schema?.database ?? selectedDb);
                 return (
                   <TouchableOpacity
                     key={db}
-                    style={[styles.dbMenuItem, active && styles.dbMenuItemActive]}
+                    style={[s.dbMenuItem, active && s.dbMenuItemActive]}
                     onPress={() => {
                       setDbMenuOpen(false);
-                      if (!active) {
-                        setSelectedDb(db);
-                        setSchema(null);
-                        setExpanded({});
-                      }
+                      if (!active) { setSelectedDb(db); setSchema(null); setExpanded({}); }
                     }}
                   >
-                    {active && <Text style={styles.dbMenuCheck}>✓</Text>}
-                    <Text style={[styles.dbMenuText, active && styles.dbMenuTextActive]}>{db}</Text>
+                    {active && <Text style={s.dbMenuCheck}>✓</Text>}
+                    <Text style={[s.dbMenuText, active && s.dbMenuTextActive]}>{db}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -154,44 +144,40 @@ export default function DBSchemaPanel({ onSelectTable }: Props) {
 
       {/* ── Stats bar ── */}
       {schema && (
-        <View style={styles.statsBar}>
-          <StatPill label="Tables" value={String(schema.tables.length)} />
-          <StatPill
-            label="Rows"
-            value={schema.tables.reduce((s, t) => s + t.row_count, 0).toLocaleString()}
-          />
-          <StatPill
-            label="Cols"
-            value={String(schema.tables.reduce((s, t) => s + t.columns.length, 0))}
-          />
+        <View style={s.statsBar}>
+          <StatPill label="Tables" value={String(schema.tables.length)} s={s} />
+          <StatPill label="Rows" value={schema.tables.reduce((a, t) => a + t.row_count, 0).toLocaleString()} s={s} />
+          <StatPill label="Cols" value={String(schema.tables.reduce((a, t) => a + t.columns.length, 0))} s={s} />
         </View>
       )}
 
-      <View style={styles.divider} />
+      <View style={s.divider} />
 
       {/* ── Body ── */}
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color="#6366f1" />
-          <Text style={styles.loadingText}>Loading schema…</Text>
+        <View style={s.center}>
+          <ActivityIndicator color={t.accent} />
+          <Text style={s.loadingText}>Loading schema…</Text>
         </View>
       ) : error ? (
-        <View style={styles.center}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity
-            onPress={() => setRefreshKey((k) => k + 1)}
-            style={styles.retryBtn}
-          >
-            <Text style={styles.retryText}>Retry</Text>
+        <View style={s.center}>
+          <Text style={s.errorText}>{error}</Text>
+          <TouchableOpacity onPress={() => setRefreshKey((k) => k + 1)} style={s.retryBtn}>
+            <Text style={s.retryText}>Retry</Text>
           </TouchableOpacity>
         </View>
+      ) : schema?.tables?.length === 0 ? (
+        <View style={s.center}>
+          <Text style={s.loadingText}>No tables found in this database.</Text>
+        </View>
       ) : (
-        <ScrollView style={styles.tableList} showsVerticalScrollIndicator={false}>
+        <ScrollView style={s.tableList} showsVerticalScrollIndicator={false}>
           {schema!.tables.map((table) => (
             <TableRow
               key={table.name}
               table={table}
-              color={TABLE_COLOR}
+              s={s}
+              t={t}
               open={!!expanded[table.name]}
               onToggle={() => toggle(table.name)}
               onSelect={onSelectTable}
@@ -205,70 +191,59 @@ export default function DBSchemaPanel({ onSelectTable }: Props) {
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
-function StatPill({ label, value }: { label: string; value: string }) {
+function StatPill({ label, value, s }: { label: string; value: string; s: ReturnType<typeof makeStyles> }) {
   return (
-    <View style={styles.statPill}>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
+    <View style={s.statPill}>
+      <Text style={s.statValue}>{value}</Text>
+      <Text style={s.statLabel}>{label}</Text>
     </View>
   );
 }
 
-type TableColor = { bg: string; border: string; text: string };
-
 function TableRow({
-  table,
-  color,
-  open,
-  onToggle,
-  onSelect,
+  table, s, t, open, onToggle, onSelect,
 }: {
   table: TableInfo;
-  color: TableColor;
+  s: ReturnType<typeof makeStyles>;
+  t: Theme;
   open: boolean;
   onToggle: () => void;
   onSelect?: (name: string) => void;
 }) {
   return (
-    <View style={[styles.tableBlock, { borderLeftColor: color.border }]}>
-      {/* Table header row */}
-      <TouchableOpacity style={styles.tableHeader} onPress={onToggle} activeOpacity={0.75}>
-        <View style={styles.tableNameWrap}>
-          <View style={[styles.tableNamePill, { backgroundColor: color.bg, borderColor: color.border }]}>
-            <Text style={[styles.tableName, { color: color.text }]} numberOfLines={1}>
-              {table.name}
-            </Text>
+    <View style={[s.tableBlock, { borderLeftColor: t.accent }]}>
+      <TouchableOpacity style={s.tableHeader} onPress={onToggle} activeOpacity={0.75}>
+        <View style={s.tableNameWrap}>
+          <View style={[s.tableNamePill, { backgroundColor: t.accentBg, borderColor: t.accentBorder }]}>
+            <Text style={[s.tableName, { color: t.accent }]} numberOfLines={1}>{table.name}</Text>
           </View>
-          <Text style={styles.tableCount}>{table.row_count.toLocaleString()} rows</Text>
+          <Text style={s.tableCount}>{table.row_count.toLocaleString()} rows</Text>
         </View>
         {onSelect && (
           <TouchableOpacity
             onPress={() => onSelect(table.name)}
-            style={[styles.queryBtn, { backgroundColor: color.bg, borderColor: color.border }]}
+            style={[s.queryBtn, { backgroundColor: t.accentBg, borderColor: t.accentBorder }]}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Text style={[styles.queryBtnText, { color: color.text }]}>Query</Text>
+            <Text style={[s.queryBtnText, { color: t.accent }]}>Query</Text>
           </TouchableOpacity>
         )}
       </TouchableOpacity>
 
-      {/* Columns */}
       {open && (
-        <View style={styles.colList}>
+        <View style={s.colList}>
           {table.columns.map((col) => (
-            <View key={col.name} style={styles.colRow}>
-              <View style={styles.colNameRow}>
-                {col.is_primary_key && <Text style={styles.badge_pk}>PK</Text>}
-                {col.is_foreign_key && <Text style={styles.badge_fk}>FK</Text>}
-                <Text style={styles.colName} numberOfLines={1}>{col.name}</Text>
+            <View key={col.name} style={s.colRow}>
+              <View style={s.colNameRow}>
+                {col.is_primary_key && <Text style={s.badge_pk}>PK</Text>}
+                {col.is_foreign_key && <Text style={s.badge_fk}>FK</Text>}
+                <Text style={s.colName} numberOfLines={1}>{col.name}</Text>
               </View>
-              <View style={styles.colMeta}>
-                <Text style={styles.colType} numberOfLines={1}>{col.type}</Text>
-                {col.nullable && <Text style={styles.colNull}>null</Text>}
+              <View style={s.colMeta}>
+                <Text style={s.colType} numberOfLines={1}>{col.type}</Text>
+                {col.nullable && <Text style={s.colNull}>null</Text>}
                 {col.foreign_table && (
-                  <Text style={styles.colRef} numberOfLines={1}>
-                    → {col.foreign_table}
-                  </Text>
+                  <Text style={s.colRef} numberOfLines={1}>→ {col.foreign_table}</Text>
                 )}
               </View>
             </View>
@@ -281,221 +256,85 @@ function TableRow({
 
 // ── Styles ─────────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  panel: {
-    flex: 1,
-    backgroundColor: '#fff',
-    overflow: 'hidden',
-  },
+function makeStyles(t: Theme) {
+  const MONO = Platform.OS === 'web' ? 'monospace' : 'Courier';
+  return StyleSheet.create({
+    panel: { flex: 1, backgroundColor: t.surface, overflow: 'hidden' },
 
-  // Header
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingTop: 12,
-    paddingBottom: 10,
-    backgroundColor: '#faf5ff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#ede9fe',
-  },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
-  pgLogo: {
-    width: 32,
-    height: 32,
-    borderRadius: 6,
-    backgroundColor: '#336791',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pgLogoText: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: '#fff',
-    letterSpacing: 0.5,
-  },
-  headerLabel: { fontSize: 9, fontWeight: '800', color: '#6366f1', letterSpacing: 1.2, marginBottom: 3 },
+    header: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      paddingHorizontal: 12, paddingTop: 12, paddingBottom: 10,
+      backgroundColor: t.dark ? '#1a1f2e' : '#faf5ff',
+      borderBottomWidth: 1, borderBottomColor: t.dark ? t.border : '#ede9fe',
+    },
+    headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+    pgLogo: { width: 32, height: 32, borderRadius: 6, backgroundColor: '#336791', alignItems: 'center', justifyContent: 'center' },
+    pgLogoText: { fontSize: 11, fontWeight: '900', color: '#fff', letterSpacing: 0.5 },
 
-  // DB switcher button
-  dbBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#ede9fe',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    maxWidth: 150,
-  },
-  dbBtnText: { fontSize: 12, fontWeight: '700', color: '#1e293b', flexShrink: 1 },
-  dbBtnChevron: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 5,
-    borderRightWidth: 5,
-    borderTopWidth: 7,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderTopColor: '#6366f1',
-    marginTop: 2,
-  },
+    dbBtn: {
+      flexDirection: 'row', alignItems: 'center', gap: 6,
+      backgroundColor: t.accentBg, borderRadius: 6,
+      paddingHorizontal: 8, paddingVertical: 4, maxWidth: 150,
+    },
+    dbBtnText: { fontSize: 12, fontWeight: '700', color: t.text, flexShrink: 1 },
+    dbBtnChevron: {
+      width: 0, height: 0,
+      borderLeftWidth: 5, borderRightWidth: 5, borderTopWidth: 7,
+      borderLeftColor: 'transparent', borderRightColor: 'transparent',
+      borderTopColor: t.accent, marginTop: 2,
+    },
+    refreshBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: t.accentBg, alignItems: 'center', justifyContent: 'center', marginLeft: 8 },
+    refreshIcon: { fontSize: 15, color: t.accent, fontWeight: '700' },
 
-  refreshBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#ede9fe',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 8,
-  },
-  refreshIcon: { fontSize: 15, color: '#6366f1', fontWeight: '700' },
+    dbMenu: {
+      position: 'absolute', backgroundColor: t.surface,
+      borderRadius: 12, borderWidth: 1, borderColor: t.border,
+      shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 16,
+      shadowOffset: { width: 0, height: 4 }, elevation: 10, minWidth: 200, paddingVertical: 6, zIndex: 999,
+    },
+    dbMenuTitle: { fontSize: 9, fontWeight: '800', color: t.textMuted, letterSpacing: 1.2, paddingHorizontal: 14, paddingTop: 6, paddingBottom: 8 },
+    dbMenuItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, gap: 8 },
+    dbMenuItemActive: { backgroundColor: t.accentBg },
+    dbMenuCheck: { fontSize: 12, color: t.accent, fontWeight: '800', width: 14 },
+    dbMenuText: { fontSize: 13, color: t.text },
+    dbMenuTextActive: { color: t.accent, fontWeight: '700' },
 
-  // DB dropdown menu
-  dbMenu: {
-    position: 'absolute',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 10,
-    minWidth: 200,
-    paddingVertical: 6,
-    zIndex: 999,
-  },
-  dbMenuTitle: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#94a3b8',
-    letterSpacing: 1.2,
-    paddingHorizontal: 14,
-    paddingTop: 6,
-    paddingBottom: 8,
-  },
-  dbMenuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 8,
-  },
-  dbMenuItemActive: { backgroundColor: '#f5f3ff' },
-  dbMenuCheck: { fontSize: 12, color: '#6366f1', fontWeight: '800', width: 14 },
-  dbMenuText: { fontSize: 13, color: '#334155' },
-  dbMenuTextActive: { color: '#6366f1', fontWeight: '700' },
+    statsBar: {
+      flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 8, gap: 6,
+      backgroundColor: t.dark ? '#1a1f2e' : '#faf5ff',
+    },
+    statPill: { flex: 1, alignItems: 'center', backgroundColor: t.accentBg, borderRadius: 8, paddingVertical: 5 },
+    statValue: { fontSize: 13, fontWeight: '800', color: t.accent },
+    statLabel: { fontSize: 9, color: t.accent, fontWeight: '600', marginTop: 1, opacity: 0.7 },
 
-  // Stats bar
-  statsBar: {
-    flexDirection: 'row',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    gap: 6,
-    backgroundColor: '#faf5ff',
-  },
-  statPill: {
-    flex: 1,
-    alignItems: 'center',
-    backgroundColor: '#ede9fe',
-    borderRadius: 8,
-    paddingVertical: 5,
-  },
-  statValue: { fontSize: 13, fontWeight: '800', color: '#4f46e5' },
-  statLabel: { fontSize: 9, color: '#7c3aed', fontWeight: '600', marginTop: 1 },
+    divider: { height: 1, backgroundColor: t.border },
 
-  divider: { height: 1, backgroundColor: '#e2e8f0' },
+    center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, gap: 10 },
+    loadingText: { fontSize: 13, color: t.textMuted, marginTop: 8 },
+    errorText: { fontSize: 13, color: '#ef4444', textAlign: 'center' },
+    retryBtn: { backgroundColor: t.accentBg, borderRadius: 8, paddingHorizontal: 16, paddingVertical: 8 },
+    retryText: { color: t.accent, fontWeight: '700', fontSize: 13 },
 
-  // Loading / error
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, gap: 10 },
-  loadingText: { fontSize: 13, color: '#94a3b8', marginTop: 8 },
-  errorText: { fontSize: 13, color: '#ef4444', textAlign: 'center' },
-  retryBtn: { backgroundColor: '#ede9fe', borderRadius: 8, paddingHorizontal: 16, paddingVertical: 8 },
-  retryText: { color: '#6366f1', fontWeight: '700', fontSize: 13 },
+    tableList: { flex: 1 },
+    tableBlock: { borderLeftWidth: 3, borderBottomWidth: 1, borderBottomColor: t.border, marginBottom: 1 },
+    tableHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 9, gap: 6 },
+    tableNameWrap: { flex: 1, gap: 2 },
+    tableNamePill: { alignSelf: 'flex-start', borderWidth: 1, borderRadius: 5, paddingHorizontal: 7, paddingVertical: 2 },
+    tableName: { fontSize: 12, fontWeight: '800' },
+    tableCount: { fontSize: 10, color: t.textMuted, marginLeft: 1 },
+    queryBtn: { borderWidth: 1, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
+    queryBtnText: { fontSize: 10, fontWeight: '800' },
 
-  // Table list
-  tableList: { flex: 1 },
-  tableBlock: {
-    borderLeftWidth: 3,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-    marginBottom: 1,
-  },
+    colList: { paddingLeft: 22, paddingRight: 10, paddingBottom: 8, borderTopWidth: 1, borderTopColor: t.border },
+    colRow: { paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: t.dark ? '#1e293b' : '#f8fafc', gap: 2 },
+    colNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    colMeta: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingLeft: 2, flexWrap: 'wrap' },
+    colName: { fontSize: 12, color: t.text, fontWeight: '600', flexShrink: 1 },
+    colType: { fontSize: 10, color: t.textMuted, fontFamily: MONO, flexShrink: 1 },
+    colNull: { fontSize: 9, color: '#d97706', fontWeight: '700', backgroundColor: '#fef3c7', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 3 },
+    colRef: { fontSize: 10, color: t.accent },
 
-  tableHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 9,
-    gap: 6,
-  },
-  chevron: { fontSize: 13, width: 13 },
-  tableNameWrap: { flex: 1, gap: 2 },
-  tableNamePill: {
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderRadius: 5,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-  },
-  tableName: { fontSize: 12, fontWeight: '800' },
-  tableCount: { fontSize: 10, color: '#94a3b8', marginLeft: 1 },
-  queryBtn: {
-    borderWidth: 1,
-    borderRadius: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-  },
-  queryBtnText: { fontSize: 10, fontWeight: '800' },
-
-  // Column rows
-  colList: {
-    paddingLeft: 22,
-    paddingRight: 10,
-    paddingBottom: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
-  },
-  colRow: {
-    paddingVertical: 5,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f8fafc',
-    gap: 2,
-  },
-  colNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  colMeta: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingLeft: 2, flexWrap: 'wrap' },
-  colName: { fontSize: 12, color: '#1e293b', fontWeight: '600', flexShrink: 1 },
-  colType: { fontSize: 10, color: '#94a3b8', fontFamily: Platform.OS === 'web' ? 'monospace' : 'Courier', flexShrink: 1 },
-  colNull: {
-    fontSize: 9,
-    color: '#d97706',
-    fontWeight: '700',
-    backgroundColor: '#fef3c7',
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 3,
-  },
-  colRef: { fontSize: 10 },
-
-  badge_pk: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#fff',
-    backgroundColor: '#4f46e5',
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 3,
-  },
-  badge_fk: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#fff',
-    backgroundColor: '#0ea5e9',
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 3,
-  },
-});
+    badge_pk: { fontSize: 9, fontWeight: '800', color: '#fff', backgroundColor: '#4f46e5', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 3 },
+    badge_fk: { fontSize: 9, fontWeight: '800', color: '#fff', backgroundColor: '#0ea5e9', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 3 },
+  });
+}

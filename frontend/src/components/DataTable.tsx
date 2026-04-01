@@ -10,6 +10,7 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
+import { useTheme, type Theme } from '../context/ThemeContext';
 
 export type Row = Record<string, unknown>;
 
@@ -22,6 +23,28 @@ type SortDir = 'asc' | 'desc' | null;
 
 const DEFAULT_COL_WIDTH = 150;
 const MIN_COL_WIDTH = 60;
+
+// ── Filter matching ────────────────────────────────────────────────────────────
+// Supports: >=100  >100  <=50  <50  =100  !=foo  plain text (contains)
+
+function matchesFilter(cellValue: unknown, expr: string): boolean {
+  const cell = cellValue == null ? '' : String(cellValue);
+  const ops = [['>=', (a: number, b: number) => a >= b], ['<=', (a: number, b: number) => a <= b],
+               ['!=', null], ['>', (a: number, b: number) => a > b], ['<', (a: number, b: number) => a < b],
+               ['=', (a: number, b: number) => a === b]] as const;
+
+  for (const [op, fn] of ops) {
+    if (!expr.startsWith(op)) continue;
+    const rhs = expr.slice(op.length).trim();
+    if (op === '!=') return !cell.toLowerCase().includes(rhs.toLowerCase());
+    const num = Number(rhs);
+    if (!isNaN(num) && rhs !== '') return fn!(Number(cell), num);
+    // fallback string compare
+    if (op === '=') return cell.toLowerCase() === rhs.toLowerCase();
+  }
+  // plain contains
+  return cell.toLowerCase().includes(expr.toLowerCase());
+}
 
 // ── Column resizing ────────────────────────────────────────────────────────────
 
@@ -53,7 +76,7 @@ function useColWidths(columns: string[]) {
   return { widths, startResize };
 }
 
-// ── Column menu (3-dot popup) ──────────────────────────────────────────────────
+// ── Column menu ────────────────────────────────────────────────────────────────
 
 interface ColMenuProps {
   col: string;
@@ -66,6 +89,8 @@ interface ColMenuProps {
 }
 
 function ColMenu({ col, sortCol, sortDir, filterValue, onSort, onFilter, onClearFilter }: ColMenuProps) {
+  const { theme: t } = useTheme();
+  const s = makeStyles(t);
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0 });
   const btnRef = useRef<View>(null);
@@ -73,67 +98,48 @@ function ColMenu({ col, sortCol, sortDir, filterValue, onSort, onFilter, onClear
   const hasFilter = filterValue.trim().length > 0;
 
   const openMenu = () => {
-    btnRef.current?.measureInWindow((x, y, _w, h) => {
-      setPos({ top: y + h + 2, left: x });
-    });
+    btnRef.current?.measureInWindow((x, y, _w, h) => setPos({ top: y + h + 2, left: x }));
     setOpen(true);
   };
-
   const close = () => setOpen(false);
 
   return (
     <View ref={btnRef}>
-      <TouchableOpacity onPress={openMenu} style={styles.dotBtn}>
-        <Text style={[styles.dotText, (isSorted || hasFilter) && styles.dotTextActive]}>⋮</Text>
+      <TouchableOpacity onPress={openMenu} style={s.dotBtn}>
+        <Text style={[s.dotText, (isSorted || hasFilter) && s.dotTextActive]}>⋮</Text>
       </TouchableOpacity>
 
       <Modal transparent visible={open} animationType="none" onRequestClose={close}>
         <TouchableWithoutFeedback onPress={close}>
           <View style={StyleSheet.absoluteFill}>
-            <View style={[styles.menu, { top: pos.top, left: pos.left }]}>
-              <Text style={styles.menuTitle}>{col}</Text>
+            <View style={[s.menu, { top: pos.top, left: pos.left }]}>
+              <Text style={s.menuTitle}>{col}</Text>
 
-              {/* Sort options */}
-              <Text style={styles.menuSection}>SORT</Text>
-              <MenuItem
-                label="↑  Ascending"
-                active={isSorted && sortDir === 'asc'}
-                onPress={() => { close(); onSort('asc'); }}
-              />
-              <MenuItem
-                label="↓  Descending"
-                active={isSorted && sortDir === 'desc'}
-                onPress={() => { close(); onSort('desc'); }}
-              />
-              {isSorted && (
-                <MenuItem
-                  label="✕  Clear sort"
-                  onPress={() => { close(); onSort(null); }}
-                />
-              )}
+              <Text style={s.menuSection}>SORT</Text>
+              <MenuItem label="↑  Ascending"  active={isSorted && sortDir === 'asc'}  onPress={() => { close(); onSort('asc'); }}  s={s} />
+              <MenuItem label="↓  Descending" active={isSorted && sortDir === 'desc'} onPress={() => { close(); onSort('desc'); }} s={s} />
+              {isSorted && <MenuItem label="✕  Clear sort" onPress={() => { close(); onSort(null); }} s={s} />}
 
-              <View style={styles.menuDivider} />
+              <View style={s.menuDivider} />
 
-              {/* Filter */}
-              <Text style={styles.menuSection}>FILTER</Text>
-              <View style={styles.menuFilterRow}>
+              <Text style={s.menuSection}>FILTER</Text>
+              <View style={s.menuFilterRow}>
                 <TextInput
-                  style={styles.menuFilterInput}
+                  style={s.menuFilterInput}
                   value={filterValue}
                   onChangeText={onFilter}
-                  placeholder="Filter value…"
-                  placeholderTextColor="#94a3b8"
+                  placeholder="text, >=100, <50, !=x"
+                  placeholderTextColor={t.textMuted}
                   autoCapitalize="none"
                   autoCorrect={false}
                   autoFocus
                 />
                 {hasFilter && (
-                  <TouchableOpacity onPress={() => { onClearFilter(); }} style={styles.clearBtn}>
-                    <Text style={styles.clearBtnText}>✕</Text>
+                  <TouchableOpacity onPress={onClearFilter} style={s.clearBtn}>
+                    <Text style={s.clearBtnText}>✕</Text>
                   </TouchableOpacity>
                 )}
               </View>
-
             </View>
           </View>
         </TouchableWithoutFeedback>
@@ -142,10 +148,10 @@ function ColMenu({ col, sortCol, sortDir, filterValue, onSort, onFilter, onClear
   );
 }
 
-function MenuItem({ label, active, onPress }: { label: string; active?: boolean; onPress: () => void }) {
+function MenuItem({ label, active, onPress, s }: { label: string; active?: boolean; onPress: () => void; s: ReturnType<typeof makeStyles> }) {
   return (
-    <TouchableOpacity style={[styles.menuItem, active && styles.menuItemActive]} onPress={onPress}>
-      <Text style={[styles.menuItemText, active && styles.menuItemTextActive]}>{label}</Text>
+    <TouchableOpacity style={[s.menuItem, active && s.menuItemActive]} onPress={onPress}>
+      <Text style={[s.menuItemText, active && s.menuItemTextActive]}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -153,6 +159,8 @@ function MenuItem({ label, active, onPress }: { label: string; active?: boolean;
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function DataTable({ columns, rows }: Props) {
+  const { theme: t } = useTheme();
+  const s = makeStyles(t);
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>(null);
   const [filters, setFilters] = useState<Record<string, string>>({});
@@ -173,8 +181,7 @@ export default function DataTable({ columns, rows }: Props) {
     let data = [...rows];
     Object.entries(filters).forEach(([col, val]) => {
       if (!val.trim()) return;
-      const lower = val.toLowerCase();
-      data = data.filter((r) => String(r[col] ?? '').toLowerCase().includes(lower));
+      data = data.filter((r) => matchesFilter(r[col], val.trim()));
     });
     if (sortCol && sortDir) {
       data.sort((a, b) => {
@@ -194,14 +201,14 @@ export default function DataTable({ columns, rows }: Props) {
   return (
     <View>
       {/* Stats bar */}
-      <View style={styles.statsRow}>
-        <Text style={styles.stats}>
+      <View style={s.statsRow}>
+        <Text style={s.stats}>
           {processed.length} / {rows.length} row{rows.length !== 1 ? 's' : ''}
           {hasFilters ? `  · ${activeFilterCount} filter${activeFilterCount > 1 ? 's' : ''} active` : ''}
         </Text>
         {hasFilters && (
           <TouchableOpacity onPress={() => setFilters({})}>
-            <Text style={styles.clearAllText}>✕ Clear all filters</Text>
+            <Text style={s.clearAllText}>✕ Clear all filters</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -209,33 +216,28 @@ export default function DataTable({ columns, rows }: Props) {
       <ScrollView horizontal showsHorizontalScrollIndicator>
         <View>
           {/* Header row */}
-          <View style={styles.headerRow}>
+          <View style={s.headerRow}>
             {columns.map((col) => {
               const w = widths[col] ?? DEFAULT_COL_WIDTH;
               const isSorted = sortCol === col;
               const hasFilter = !!(filters[col]?.trim());
-
               return (
-                <View key={col} style={[styles.headerCell, { width: w }]}>
-                  {/* Sort label — click to toggle sort */}
+                <View key={col} style={[s.headerCell, { width: w }]}>
                   <TouchableOpacity
-                    style={styles.headerLabel}
+                    style={s.headerLabel}
                     onPress={() => {
                       if (!isSorted) handleSort(col, 'asc');
                       else if (sortDir === 'asc') handleSort(col, 'desc');
                       else handleSort(col, null);
                     }}
                   >
-                    <Text style={styles.headerText} numberOfLines={1}>
+                    <Text style={s.headerText} numberOfLines={1}>
                       {col}
-                      {isSorted && (
-                        <Text style={styles.sortArrow}>{sortDir === 'asc' ? ' ↑' : ' ↓'}</Text>
-                      )}
+                      {isSorted && <Text style={s.sortArrow}>{sortDir === 'asc' ? ' ↑' : ' ↓'}</Text>}
                     </Text>
-                    {hasFilter && <View style={styles.filterDot} />}
+                    {hasFilter && <View style={s.filterDot} />}
                   </TouchableOpacity>
 
-                  {/* 3-dot menu */}
                   <ColMenu
                     col={col}
                     sortCol={sortCol}
@@ -246,12 +248,11 @@ export default function DataTable({ columns, rows }: Props) {
                     onClearFilter={() => clearFilter(col)}
                   />
 
-                  {/* Resize grip */}
                   {Platform.OS === 'web' && (
                     <View
                       // @ts-ignore
                       onMouseDown={(e: any) => { e.preventDefault(); startResize(col, e.clientX, w); }}
-                      style={styles.resizeHandle}
+                      style={s.resizeHandle}
                     />
                   )}
                 </View>
@@ -261,16 +262,19 @@ export default function DataTable({ columns, rows }: Props) {
 
           {/* Data rows */}
           {processed.length === 0 ? (
-            <View style={styles.emptyRow}>
-              <Text style={styles.emptyText}>No rows match the current filters.</Text>
+            <View style={s.emptyRow}>
+              <Text style={s.emptyText}>No rows match the current filters.</Text>
             </View>
           ) : (
             processed.map((row, i) => (
-              <View key={i} style={[styles.dataRow, i % 2 === 1 && styles.dataRowAlt]}>
+              <View
+                key={i}
+                style={[s.dataRow, { backgroundColor: i % 2 === 1 ? t.dark ? '#162032' : '#f8fafc' : t.surface }]}
+              >
                 {columns.map((col) => {
                   const w = widths[col] ?? DEFAULT_COL_WIDTH;
                   return (
-                    <Text key={col} style={[styles.cell, { width: w }]} numberOfLines={1}>
+                    <Text key={col} style={[s.cell, { width: w }]} numberOfLines={1}>
                       {row[col] == null ? '—' : String(row[col])}
                     </Text>
                   );
@@ -286,120 +290,63 @@ export default function DataTable({ columns, rows }: Props) {
 
 // ── Styles ─────────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  statsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  stats: { fontSize: 12, color: '#64748b', fontWeight: '600' },
-  clearAllText: { fontSize: 12, color: '#ef4444', fontWeight: '600' },
+function makeStyles(t: Theme) {
+  return StyleSheet.create({
+    statsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+    stats: { fontSize: 12, color: t.textSub, fontWeight: '600' },
+    clearAllText: { fontSize: 12, color: '#ef4444', fontWeight: '600' },
 
-  // Header
-  headerRow: { flexDirection: 'row', backgroundColor: '#ede9fe' },
-  headerCell: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRightWidth: 1,
-    borderRightColor: '#ddd6fe',
-    borderBottomWidth: 2,
-    borderBottomColor: '#c4b5fd',
-  },
-  headerLabel: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 9 },
-  headerText: { fontSize: 13, fontWeight: '700', color: '#4f46e5', flex: 1 },
-  sortArrow: { fontSize: 12, color: '#6366f1' },
-  filterDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#6366f1', marginLeft: 4 },
+    headerRow: { flexDirection: 'row', backgroundColor: t.accentBg },
+    headerCell: {
+      flexDirection: 'row', alignItems: 'center',
+      borderRightWidth: 1, borderRightColor: t.dark ? t.accentBorder : '#ddd6fe',
+      borderBottomWidth: 2, borderBottomColor: t.dark ? t.accent : '#c4b5fd',
+    },
+    headerLabel: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 9 },
+    headerText: { fontSize: 13, fontWeight: '700', color: t.accent, flex: 1 },
+    sortArrow: { fontSize: 12, color: t.accent },
+    filterDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: t.accent, marginLeft: 4 },
 
-  // 3-dot button
-  dotBtn: { paddingHorizontal: 6, paddingVertical: 8 },
-  dotText: { fontSize: 16, color: '#94a3b8', lineHeight: 16 },
-  dotTextActive: { color: '#6366f1' },
+    dotBtn: { paddingHorizontal: 6, paddingVertical: 8 },
+    dotText: { fontSize: 16, color: t.textMuted, lineHeight: 16 },
+    dotTextActive: { color: t.accent },
 
-  // Resize grip
-  resizeHandle: {
-    width: 5,
-    alignSelf: 'stretch',
-    cursor: 'col-resize' as any,
-    borderRightWidth: 2,
-    borderRightColor: '#c4b5fd',
-  },
+    resizeHandle: {
+      width: 5, alignSelf: 'stretch',
+      cursor: 'col-resize' as any,
+      borderRightWidth: 2, borderRightColor: t.dark ? t.accent : '#c4b5fd',
+    },
 
-  // Column menu
-  menu: {
-    position: 'absolute',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 10,
-    minWidth: 220,
-    paddingBottom: 10,
-  },
-  menuTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#1e293b',
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 6,
-  },
-  menuSection: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#94a3b8',
-    letterSpacing: 1,
-    paddingHorizontal: 14,
-    paddingTop: 8,
-    paddingBottom: 4,
-  },
-  menuDivider: { height: 1, backgroundColor: '#f1f5f9', marginVertical: 6 },
-  menuItem: { paddingHorizontal: 14, paddingVertical: 9 },
-  menuItemActive: { backgroundColor: '#ede9fe' },
-  menuItemText: { fontSize: 13, color: '#475569' },
-  menuItemTextActive: { color: '#6366f1', fontWeight: '700' },
+    menu: {
+      position: 'absolute', backgroundColor: t.surface,
+      borderRadius: 12, borderWidth: 1, borderColor: t.border,
+      shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 16,
+      shadowOffset: { width: 0, height: 4 }, elevation: 10, minWidth: 220, paddingBottom: 10,
+    },
+    menuTitle: { fontSize: 13, fontWeight: '800', color: t.text, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 6 },
+    menuSection: { fontSize: 10, fontWeight: '800', color: t.textMuted, letterSpacing: 1, paddingHorizontal: 14, paddingTop: 8, paddingBottom: 4 },
+    menuDivider: { height: 1, backgroundColor: t.border, marginVertical: 6 },
+    menuItem: { paddingHorizontal: 14, paddingVertical: 9 },
+    menuItemActive: { backgroundColor: t.accentBg },
+    menuItemText: { fontSize: 13, color: t.textSub },
+    menuItemTextActive: { color: t.accent, fontWeight: '700' },
 
-  // Filter inside menu
-  menuFilterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 14,
-    marginTop: 4,
-    gap: 6,
-  },
-  menuFilterInput: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    fontSize: 13,
-    color: '#1e293b',
-  },
-  clearBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#fee2e2',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  clearBtnText: { fontSize: 11, color: '#ef4444', fontWeight: '700' },
+    menuFilterRow: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 14, marginTop: 4, gap: 6 },
+    menuFilterInput: {
+      flex: 1, backgroundColor: t.inputBg, borderWidth: 1, borderColor: t.border,
+      borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7, fontSize: 13, color: t.text,
+    },
+    clearBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#fee2e2', alignItems: 'center', justifyContent: 'center' },
+    clearBtnText: { fontSize: 11, color: '#ef4444', fontWeight: '700' },
 
-  // Data rows
-  dataRow: { flexDirection: 'row' },
-  dataRowAlt: { backgroundColor: '#fafafa' },
-  cell: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 13,
-    color: '#1e293b',
-    borderRightWidth: 1,
-    borderRightColor: '#e2e8f0',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-  },
-  emptyRow: { padding: 20, alignItems: 'center' },
-  emptyText: { fontSize: 13, color: '#94a3b8' },
-});
+    dataRow: { flexDirection: 'row' },
+    cell: {
+      paddingHorizontal: 10, paddingVertical: 8,
+      fontSize: 13, color: t.text,
+      borderRightWidth: 1, borderRightColor: t.border,
+      borderBottomWidth: 1, borderBottomColor: t.border,
+    },
+    emptyRow: { padding: 20, alignItems: 'center' },
+    emptyText: { fontSize: 13, color: t.textMuted },
+  });
+}

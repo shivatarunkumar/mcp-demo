@@ -1,4 +1,6 @@
+import json
 import re
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import text
@@ -13,21 +15,36 @@ router = APIRouter(prefix="/query", tags=["query"])
 
 _ALLOWED_PREFIXES = ("select", "with", "explain")
 
-_SCHEMA = """
-Tables in the retailsdb PostgreSQL database:
+_DATA_DICT_DIR = Path(__file__).resolve().parents[2] / "data-dictionary"
 
-customers  (id SERIAL PK, name VARCHAR, email VARCHAR, phone VARCHAR, city VARCHAR, created_at TIMESTAMP)
-products   (id SERIAL PK, name VARCHAR, category VARCHAR, price DECIMAL(10,2), stock INT)
-orders     (id SERIAL PK, customer_id INT FK→customers.id, order_date TIMESTAMP, status VARCHAR, total DECIMAL(10,2))
-transactions (id SERIAL PK, order_id INT FK→orders.id, amount DECIMAL(10,2), payment_method VARCHAR, transaction_date TIMESTAMP, status VARCHAR)
-"""
 
-_SYSTEM_PROMPT = (
-    "You are a PostgreSQL expert. Given a natural language question and the database schema below, "
-    "return ONLY the SQL query — no explanation, no markdown, no backticks. "
-    "The query must be a single SELECT statement.\n\n"
-    + _SCHEMA
-)
+def _load_schema_from_data_dictionary() -> str:
+    lines = ["Tables in the PostgreSQL database:\n"]
+    for path in sorted(_DATA_DICT_DIR.glob("*.json")):
+        table = json.loads(path.read_text())
+        cols = ", ".join(
+            f"{c['name']} {c['type']}"
+            + (f" ({', '.join(c['constraints'])})" if c.get("constraints") else "")
+            + (f" -- {c['description']}" if c.get("description") else "")
+            for c in table["columns"]
+        )
+        lines.append(f"{table['table']}  ({cols})")
+    return "\n".join(lines)
+
+
+def _build_system_prompt() -> str:
+    schema = _load_schema_from_data_dictionary()
+    return (
+        "You are a PostgreSQL expert. Given a natural language question and the database schema below, "
+        "return ONLY the SQL query — no explanation, no markdown, no backticks. "
+        "The query must be a single SELECT statement.\n\n"
+        "STRICT RULES:\n"
+        "- Use ONLY the exact table names and column names listed in the schema below. Never invent or guess names.\n"
+        "- When joining tables, always qualify every column reference with its correct table alias.\n"
+        "- Use <> for not-equal comparisons (not !=).\n"
+        "- For status filters use the exact values likely stored (e.g. 'failed', 'pending', 'completed').\n\n"
+        + schema
+    )
 
 
 def _extract_sql(raw: str) -> str:
@@ -161,7 +178,7 @@ async def get_schema(
 @router.post("/nl2sql", response_model=NL2SQLResponse)
 async def nl2sql(payload: NL2SQLRequest, db: AsyncSession = Depends(get_db)):
     model = payload.model or settings.default_model
-    prompt = f"{_SYSTEM_PROMPT}\nQuestion: {payload.question}\nSQL:"
+    prompt = f"{_build_system_prompt()}\nQuestion: {payload.question}\nSQL:"
 
     try:
         result = await ollama_client.generate(prompt, model)
@@ -172,11 +189,14 @@ async def nl2sql(payload: NL2SQLRequest, db: AsyncSession = Depends(get_db)):
     if not sql:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="LLM did not return a valid SQL query.")
 
-    query_result = await _execute_sql(sql, db)
-    return NL2SQLResponse(
-        question=payload.question,
-        sql=sql,
-        columns=query_result.columns,
-        rows=query_result.rows,
-        row_count=query_result.row_count,
-    )
+    try:
+        query_result = await _execute_sql(sql, db)
+        return NL2SQLResponse(
+            question=payload.question,
+            sql=sql,
+            columns=query_result.columns,
+            rows=query_result.rows,
+            row_count=query_result.row_count,
+        )
+    except HTTPException as exc:
+        return NL2SQLResponse(question=payload.question, sql=sql, error=exc.detail)

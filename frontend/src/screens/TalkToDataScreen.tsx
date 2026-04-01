@@ -26,6 +26,7 @@ interface QueryResult {
   row_count: number;
   sql?: string;
   question?: string;
+  error?: string;
 }
 
 // ── API helpers ────────────────────────────────────────────────────────────────
@@ -49,6 +50,7 @@ async function runNLQuery(question: string): Promise<QueryResult> {
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.detail ?? 'NL2SQL failed');
+  // Backend returns 200 even on SQL execution failure; error field carries the message
   return data;
 }
 
@@ -149,7 +151,11 @@ export default function TalkToDataScreen() {
       } else {
         const data = await runNLQuery(question);
         setEditableSql(data.sql ?? '');
-        setResult(data);
+        if (data.error) {
+          setError(data.error);
+        } else {
+          setResult(data);
+        }
       }
     } catch (e: any) {
       setError(e.message);
@@ -340,28 +346,34 @@ export default function TalkToDataScreen() {
           </View>
         )}
 
-        {/* Editable generated SQL (NL mode) */}
-        {editableSql !== null && showSql && (
+        {/* Editable generated SQL (NL mode) — always visible when toggle is on */}
+        {mode === 'nl' && showSql && (
           <View style={s.card}>
             <View style={s.cardHeader}>
-              <Text style={s.label}>GENERATED SQL  <Text style={s.labelHint}>(editable)</Text></Text>
-              <View style={s.headerActions}>
-                <ActionBtn label="Format" onPress={() => setEditableSql(formatSQL(editableSql))} />
-                <ActionBtn label={copied ? 'Copied!' : 'Copy'} onPress={() => handleCopySql(editableSql)} accent={copied} />
-              </View>
+              <Text style={s.label}>
+                GENERATED SQL  <Text style={s.labelHint}>{editableSql !== null ? '(editable)' : '(run a query to generate)'}</Text>
+              </Text>
+              {editableSql !== null && (
+                <View style={s.headerActions}>
+                  <ActionBtn label="Format" onPress={() => setEditableSql(formatSQL(editableSql))} />
+                  <ActionBtn label={copied ? 'Copied!' : 'Copy'} onPress={() => handleCopySql(editableSql)} accent={copied} />
+                </View>
+              )}
             </View>
             <ResizableInput
               variant="dark"
-              value={editableSql}
+              value={editableSql ?? ''}
               onChangeText={setEditableSql}
             />
-            <TouchableOpacity
-              style={[s.runBtn, loading && s.runBtnDisabled]}
-              onPress={handleRerunEdited}
-              disabled={loading}
-            >
-              <Text style={s.runBtnText}>▶  Run Edited SQL</Text>
-            </TouchableOpacity>
+            {editableSql !== null && (
+              <TouchableOpacity
+                style={[s.runBtn, loading && s.runBtnDisabled]}
+                onPress={handleRerunEdited}
+                disabled={loading}
+              >
+                <Text style={s.runBtnText}>▶  Run Edited SQL</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
