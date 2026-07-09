@@ -25,7 +25,7 @@ export default function LandingScreen({ navigation }: Props) {
     <View style={styles.container}>
       {/* Top bar */}
       <View style={styles.topBar}>
-        <Text style={styles.userEmail}>{user?.email}</Text>
+        <Text style={styles.userEmail}>{user?.first_name ?? user?.username ?? user?.email}</Text>
         <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.8}>
           <Text style={styles.logoutText}>Sign out</Text>
         </TouchableOpacity>
@@ -56,11 +56,18 @@ export default function LandingScreen({ navigation }: Props) {
           accent="#0ea5e9"
           onPress={() => navigation.navigate('Chat')}
         />
+        <OptionCard
+          emoji="🔑"
+          title="My Data Access"
+          description="Request access to databases or tables and track your approval status."
+          accent="#10b981"
+          onPress={() => navigation.navigate('Access')}
+        />
         {user?.role === 'admin' && (
           <OptionCard
             emoji="🛡️"
             title="Admin Panel"
-            description="Review and approve pending user registrations."
+            description="Review user registrations and data access requests."
             accent="#f59e0b"
             onPress={() => navigation.navigate('Admin')}
           />

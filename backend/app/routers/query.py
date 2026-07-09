@@ -1,19 +1,82 @@
 import json
 import re
+import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import text
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from datetime import datetime, timezone
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app import ollama_client
+from app.access_models import DbAccessGrant, PgDatabase
+from app.auth_utils import decode_token
 from app.config import settings
 from app.database import get_db
+from app.datamanager_database import get_dm_db
 from app.schemas import NL2SQLRequest, NL2SQLResponse, QueryRequest, QueryResponse, ColumnInfo, SchemaResponse, TableInfo
 
 router = APIRouter(prefix="/query", tags=["query"])
 
 _ALLOWED_PREFIXES = ("select", "with", "explain")
+
+_DEFAULT_DB = settings.database_url.rsplit("/", 1)[-1]
+
+
+async def _check_access(authorization: str, db_name: str | None, dm_db: AsyncSession) -> str:
+    """Enforce that the token owner has a grant for the target database. Admins bypass.
+    Returns the user's role."""
+    try:
+        token = authorization.removeprefix("Bearer ")
+        payload = decode_token(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token.")
+
+    role = payload.get("role", "user")
+    if role == "admin":
+        return role
+
+    user_id = uuid.UUID(payload["sub"])
+    target = db_name or _DEFAULT_DB
+
+    now = datetime.now(timezone.utc)
+
+    # Check database-level grant (not revoked, not expired)
+    db_grant = await dm_db.execute(
+        select(DbAccessGrant)
+        .join(PgDatabase, DbAccessGrant.database_id == PgDatabase.id)
+        .where(
+            DbAccessGrant.user_id == user_id,
+            DbAccessGrant.revoked_at.is_(None),
+            DbAccessGrant.scope_type == "database",
+            PgDatabase.name == target,
+        )
+    )
+    grant = db_grant.scalar_one_or_none()
+    if grant and (grant.expires_at is None or grant.expires_at > now):
+        return role
+
+    # Fall back: check if user has any table-level grant for this database
+    from app.access_models import PgTableCatalog
+    tbl_grant = await dm_db.execute(
+        select(DbAccessGrant)
+        .join(PgTableCatalog, DbAccessGrant.table_id == PgTableCatalog.id)
+        .join(PgDatabase, PgTableCatalog.database_id == PgDatabase.id)
+        .where(
+            DbAccessGrant.user_id == user_id,
+            DbAccessGrant.revoked_at.is_(None),
+            DbAccessGrant.scope_type == "table",
+            PgDatabase.name == target,
+        )
+    )
+    tbl = tbl_grant.scalar_one_or_none()
+    if tbl and (tbl.expires_at is None or tbl.expires_at > now):
+        return role
+
+    raise HTTPException(
+        status_code=403,
+        detail=f"Access denied to '{target}'. Submit an access request to query this database.",
+    )
 
 _DATA_DICT_DIR = Path(__file__).resolve().parents[2] / "data-dictionary"
 
@@ -67,20 +130,29 @@ def _extract_sql(raw: str) -> str:
     return raw.strip()
 
 
-async def _execute_sql(sql: str, db: AsyncSession) -> QueryResponse:
+async def _execute_sql(sql: str, db: AsyncSession, is_admin: bool = False) -> QueryResponse:
     stripped = sql.strip().lower()
-    if not any(stripped.startswith(p) for p in _ALLOWED_PREFIXES):
+    if not is_admin and not any(stripped.startswith(p) for p in _ALLOWED_PREFIXES):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only SELECT / WITH / EXPLAIN queries are allowed.",
         )
     try:
         result = await db.execute(text(sql))
+        if is_admin:
+            await db.commit()
     except Exception as exc:
+        if is_admin:
+            await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
-    columns = list(result.keys())
-    rows = [dict(zip(columns, row)) for row in result.fetchall()]
+    try:
+        columns = list(result.keys())
+        rows = [dict(zip(columns, row)) for row in result.fetchall()]
+    except Exception:
+        # DML statements (INSERT/UPDATE/DELETE) don't return rows
+        columns = ["affected_rows"]
+        rows = [{"affected_rows": result.rowcount}]
     return QueryResponse(columns=columns, rows=rows, row_count=len(rows))
 
 
@@ -159,10 +231,16 @@ async def _get_db_session(db_name: str | None, default_db: AsyncSession):
 
 
 @router.post("/", response_model=QueryResponse)
-async def run_query(payload: QueryRequest, db: AsyncSession = Depends(get_db)):
+async def run_query(
+    payload: QueryRequest,
+    db: AsyncSession = Depends(get_db),
+    dm_db: AsyncSession = Depends(get_dm_db),
+    authorization: str = Header(...),
+):
+    role = await _check_access(authorization, payload.db_name, dm_db)
     session, engine = await _get_db_session(payload.db_name, db)
     try:
-        return await _execute_sql(payload.sql, session)
+        return await _execute_sql(payload.sql, session, is_admin=(role == "admin"))
     finally:
         if engine:
             await session.close()
@@ -202,7 +280,13 @@ async def get_schema(
 
 
 @router.post("/nl2sql", response_model=NL2SQLResponse)
-async def nl2sql(payload: NL2SQLRequest, db: AsyncSession = Depends(get_db)):
+async def nl2sql(
+    payload: NL2SQLRequest,
+    db: AsyncSession = Depends(get_db),
+    dm_db: AsyncSession = Depends(get_dm_db),
+    authorization: str = Header(...),
+):
+    role = await _check_access(authorization, payload.db_name, dm_db)
     model = payload.model or settings.default_model
     prompt = f"{_build_system_prompt()}\nQuestion: {payload.question}\nSQL:"
 
@@ -217,7 +301,7 @@ async def nl2sql(payload: NL2SQLRequest, db: AsyncSession = Depends(get_db)):
 
     session, engine = await _get_db_session(payload.db_name, db)
     try:
-        query_result = await _execute_sql(sql, session)
+        query_result = await _execute_sql(sql, session, is_admin=(role == "admin"))
         return NL2SQLResponse(
             question=payload.question,
             sql=sql,

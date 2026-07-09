@@ -40,6 +40,7 @@ import RegisterScreen from './src/screens/RegisterScreen';
 import ChatScreen from './src/screens/ChatScreen';
 import TalkToDataScreen from './src/screens/TalkToDataScreen';
 import AdminScreen from './src/screens/AdminScreen';
+import AccessScreen from './src/screens/AccessScreen';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 
@@ -50,6 +51,7 @@ export type RootStackParamList = {
   Chat: undefined;
   TalkToData: undefined;
   Admin: undefined;
+  Access: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -113,11 +115,16 @@ function AppNavigator() {
             ),
           }}
         />
+        <Stack.Screen
+          name="Access"
+          component={AccessScreen}
+          options={{ title: 'Data Access' }}
+        />
         {user?.role === 'admin' && (
           <Stack.Screen
             name="Admin"
             component={AdminScreen}
-            options={{ title: 'Admin — User Approvals' }}
+            options={{ title: 'Admin Panel' }}
           />
         )}
       </Stack.Navigator>

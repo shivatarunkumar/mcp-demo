@@ -23,6 +23,9 @@ class User(DMBase):
     password_updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    first_name: Mapped[str | None] = mapped_column(String(100))
+    last_name: Mapped[str | None] = mapped_column(String(100))
+    username: Mapped[str | None] = mapped_column(String(100), unique=True)
     role: Mapped[str] = mapped_column(String(10), nullable=False, default="user")
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending_approval")
     failed_login_attempts: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)

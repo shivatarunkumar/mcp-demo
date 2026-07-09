@@ -1,7 +1,10 @@
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useCallback, useRef, useState } from 'react';
 import DataTable from '../components/DataTable';
 import DBSchemaPanel from '../components/DBSchemaPanel';
+import { useAuth } from '../context/AuthContext';
 import { useTheme, type Theme } from '../context/ThemeContext';
+import { RootStackParamList } from '../../App';
 import {
   ActivityIndicator,
   Modal,
@@ -31,25 +34,33 @@ interface QueryResult {
 
 // ── API helpers ────────────────────────────────────────────────────────────────
 
-async function runSQLQuery(sql: string, dbName?: string | null): Promise<QueryResult> {
+async function runSQLQuery(sql: string, token: string, dbName?: string | null): Promise<QueryResult> {
   const res = await fetch(`${BASE_URL}/query/`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ sql, ...(dbName ? { db_name: dbName } : {}) }),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.detail ?? 'Query failed');
+  if (!res.ok) {
+    const err = new Error(data.detail ?? 'Query failed') as any;
+    err.status = res.status;
+    throw err;
+  }
   return data;
 }
 
-async function runNLQuery(question: string, dbName?: string | null): Promise<QueryResult> {
+async function runNLQuery(question: string, token: string, dbName?: string | null): Promise<QueryResult> {
   const res = await fetch(`${BASE_URL}/query/nl2sql`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ question, ...(dbName ? { db_name: dbName } : {}) }),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.detail ?? 'NL2SQL failed');
+  if (!res.ok) {
+    const err = new Error(data.detail ?? 'NL2SQL failed') as any;
+    err.status = res.status;
+    throw err;
+  }
   return data;
 }
 
@@ -125,9 +136,15 @@ function copyAsTable(columns: string[], rows: Record<string, unknown>[]): string
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function TalkToDataScreen() {
+type Props = {
+  navigation: NativeStackNavigationProp<RootStackParamList, 'TalkToData'>;
+};
+
+export default function TalkToDataScreen({ navigation }: Props) {
   const { theme } = useTheme();
+  const { token } = useAuth();
   const s = makeStyles(theme);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [mode, setMode] = useState<Mode>('sql');
   const [sql, setSql] = useState('SELECT * FROM customers LIMIT 10;');
   const [question, setQuestion] = useState('');
@@ -140,16 +157,18 @@ export default function TalkToDataScreen() {
   const [selectedDb, setSelectedDb] = useState<string | null>(null);
 
   const handleRun = async () => {
+    if (!token) return;
     setLoading(true);
     setError(null);
     setResult(null);
     setEditableSql(null);
+    setAccessDenied(false);
     try {
       if (mode === 'sql') {
-        const data = await runSQLQuery(sql, selectedDb);
+        const data = await runSQLQuery(sql, token, selectedDb);
         setResult(data);
       } else {
-        const data = await runNLQuery(question, selectedDb);
+        const data = await runNLQuery(question, token, selectedDb);
         setEditableSql(data.sql ?? '');
         if (data.error) {
           setError(data.error);
@@ -158,21 +177,27 @@ export default function TalkToDataScreen() {
         }
       }
     } catch (e: any) {
-      setError(e.message);
+      if (e.status === 403) {
+        setAccessDenied(true);
+      } else {
+        setError(e.message);
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const handleRerunEdited = async () => {
-    if (!editableSql) return;
+    if (!editableSql || !token) return;
     setLoading(true);
     setError(null);
+    setAccessDenied(false);
     try {
-      const data = await runSQLQuery(editableSql, selectedDb);
+      const data = await runSQLQuery(editableSql, token, selectedDb);
       setResult({ ...data, sql: editableSql });
     } catch (e: any) {
-      setError(e.message);
+      if (e.status === 403) setAccessDenied(true);
+      else setError(e.message);
     } finally {
       setLoading(false);
     }
@@ -342,6 +367,26 @@ export default function TalkToDataScreen() {
             }
           </TouchableOpacity>
         </View>
+
+        {/* Access Denied */}
+        {accessDenied && (
+          <View style={s.accessDeniedBox}>
+            <View style={s.accessDeniedIcon}><Text style={{ fontSize: 22 }}>🔒</Text></View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.accessDeniedTitle}>Access denied</Text>
+              <Text style={s.accessDeniedText}>
+                You don't have permission to query this database. Submit an access request and wait for admin approval.
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={s.accessDeniedBtn}
+              onPress={() => navigation.navigate('Access')}
+              activeOpacity={0.85}
+            >
+              <Text style={s.accessDeniedBtnText}>Request access</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Error */}
         {error && (
@@ -773,6 +818,22 @@ function makeStyles(t: Theme) {
     runBtnDisabled: { backgroundColor: t.dark ? '#4338ca' : '#a5b4fc' },
     runBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 
+    accessDeniedBox: {
+      backgroundColor: '#fffbeb', borderRadius: 12, padding: 14,
+      borderWidth: 1, borderColor: '#fde68a',
+      flexDirection: 'row', alignItems: 'center', gap: 12,
+    },
+    accessDeniedIcon: {
+      width: 40, height: 40, borderRadius: 20,
+      backgroundColor: '#fef3c7', alignItems: 'center', justifyContent: 'center',
+    },
+    accessDeniedTitle: { fontSize: 14, fontWeight: '700', color: '#92400e', marginBottom: 2 },
+    accessDeniedText: { fontSize: 12, color: '#b45309', lineHeight: 17 },
+    accessDeniedBtn: {
+      backgroundColor: '#f59e0b', borderRadius: 8,
+      paddingHorizontal: 12, paddingVertical: 8, alignSelf: 'flex-start',
+    },
+    accessDeniedBtnText: { color: '#fff', fontWeight: '700', fontSize: 12 },
     errorBox: { backgroundColor: t.errorBg, borderRadius: 10, padding: 14, borderLeftWidth: 4, borderLeftColor: '#ef4444', gap: 10 },
     errorText: { color: t.errorText, fontSize: 13 },
     retryBtn: { alignSelf: 'flex-start', backgroundColor: '#ef4444', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 7 },

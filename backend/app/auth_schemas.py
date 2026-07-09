@@ -7,16 +7,22 @@ from pydantic import BaseModel
 class RegisterRequest(BaseModel):
     email: str
     password: str
+    first_name: str | None = None
+    last_name: str | None = None
+    username: str | None = None
 
 
 class LoginRequest(BaseModel):
-    email: str
+    identifier: str  # email or username
     password: str
 
 
 class UserResponse(BaseModel):
     id: uuid.UUID
     email: str
+    first_name: str | None
+    last_name: str | None
+    username: str | None
     role: str
     status: str
     created_at: datetime

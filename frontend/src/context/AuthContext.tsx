@@ -3,6 +3,9 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 export interface AuthUser {
   id: string;
   email: string;
+  first_name: string | null;
+  last_name: string | null;
+  username: string | null;
   role: string;
   status: string;
 }

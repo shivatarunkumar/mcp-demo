@@ -18,6 +18,9 @@ type Props = {
 };
 
 export default function RegisterScreen({ navigation }: Props) {
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -25,9 +28,17 @@ export default function RegisterScreen({ navigation }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  const handleFirstNameChange = (val: string) => {
+    setFirstName(val);
+    // Auto-populate username from first name if user hasn't manually edited it
+    if (!username || username === firstName.toLowerCase().replace(/\s+/g, '')) {
+      setUsername(val.toLowerCase().replace(/\s+/g, ''));
+    }
+  };
+
   const handleRegister = async () => {
-    if (!email.trim() || !password.trim()) {
-      setError('Email and password are required.');
+    if (!firstName.trim() || !email.trim() || !password.trim()) {
+      setError('First name, email, and password are required.');
       return;
     }
     if (password !== confirm) {
@@ -41,7 +52,13 @@ export default function RegisterScreen({ navigation }: Props) {
     setLoading(true);
     setError(null);
     try {
-      await registerUser(email.trim(), password);
+      await registerUser(
+        email.trim(),
+        password,
+        firstName.trim(),
+        lastName.trim() || undefined,
+        username.trim() || undefined,
+      );
       setSuccess(true);
     } catch (e: any) {
       setError(e.message);
@@ -89,8 +106,48 @@ export default function RegisterScreen({ navigation }: Props) {
           </View>
         )}
 
+        <View style={styles.row}>
+          <View style={[styles.field, { flex: 1 }]}>
+            <Text style={styles.label}>First name <Text style={styles.required}>*</Text></Text>
+            <TextInput
+              style={styles.input}
+              value={firstName}
+              onChangeText={handleFirstNameChange}
+              placeholder="Jane"
+              placeholderTextColor="#94a3b8"
+              autoCapitalize="words"
+              autoCorrect={false}
+            />
+          </View>
+          <View style={[styles.field, { flex: 1 }]}>
+            <Text style={styles.label}>Last name</Text>
+            <TextInput
+              style={styles.input}
+              value={lastName}
+              onChangeText={setLastName}
+              placeholder="Doe"
+              placeholderTextColor="#94a3b8"
+              autoCapitalize="words"
+              autoCorrect={false}
+            />
+          </View>
+        </View>
+
         <View style={styles.field}>
-          <Text style={styles.label}>Email</Text>
+          <Text style={styles.label}>Username</Text>
+          <TextInput
+            style={styles.input}
+            value={username}
+            onChangeText={setUsername}
+            placeholder="auto-filled from first name"
+            placeholderTextColor="#94a3b8"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </View>
+
+        <View style={styles.field}>
+          <Text style={styles.label}>Email <Text style={styles.required}>*</Text></Text>
           <TextInput
             style={styles.input}
             value={email}
@@ -104,7 +161,7 @@ export default function RegisterScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.field}>
-          <Text style={styles.label}>Password</Text>
+          <Text style={styles.label}>Password <Text style={styles.required}>*</Text></Text>
           <TextInput
             style={styles.input}
             value={password}
@@ -209,8 +266,15 @@ const styles = StyleSheet.create({
     color: '#ef4444',
     fontSize: 13,
   },
+  row: {
+    flexDirection: 'row',
+    gap: 10,
+  },
   field: {
     gap: 6,
+  },
+  required: {
+    color: '#ef4444',
   },
   label: {
     fontSize: 12,

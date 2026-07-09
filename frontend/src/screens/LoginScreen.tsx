@@ -1,8 +1,10 @@
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   StyleSheet,
   Text,
@@ -12,7 +14,7 @@ import {
 } from 'react-native';
 import { RootStackParamList } from '../../App';
 import { useAuth } from '../context/AuthContext';
-import { loginUser } from '../services/api';
+import { loginUser, forgotPassword } from '../services/api';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Login'>;
@@ -20,20 +22,39 @@ type Props = {
 
 export default function LoginScreen({ navigation }: Props) {
   const { login } = useAuth();
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [forgotVisible, setForgotVisible] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [forgotIdentifier, setForgotIdentifier] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotMsg, setForgotMsg] = useState<string | null>(null);
+
+  const handleForgot = async () => {
+    if (!forgotIdentifier.trim()) return;
+    setForgotLoading(true);
+    setForgotMsg(null);
+    try {
+      await forgotPassword(forgotIdentifier.trim());
+      setForgotMsg('Request submitted. Contact your admin to get a temporary password.');
+    } catch (e: any) {
+      setForgotMsg(e.message);
+    } finally {
+      setForgotLoading(false);
+    }
+  };
 
   const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
-      setError('Please enter your email and password.');
+    if (!identifier.trim() || !password.trim()) {
+      setError('Please enter your email/username and password.');
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      const data = await loginUser(email.trim(), password);
+      const data = await loginUser(identifier.trim(), password);
       login(data.access_token, data.user);
     } catch (e: any) {
       setError(e.message);
@@ -59,30 +80,34 @@ export default function LoginScreen({ navigation }: Props) {
         )}
 
         <View style={styles.field}>
-          <Text style={styles.label}>Email</Text>
+          <Text style={styles.label}>Email or username</Text>
           <TextInput
             style={styles.input}
-            value={email}
-            onChangeText={setEmail}
-            placeholder="you@example.com"
+            value={identifier}
+            onChangeText={setIdentifier}
+            placeholder="you@example.com or janedoe"
             placeholderTextColor="#94a3b8"
             autoCapitalize="none"
-            keyboardType="email-address"
             autoCorrect={false}
           />
         </View>
 
         <View style={styles.field}>
           <Text style={styles.label}>Password</Text>
-          <TextInput
-            style={styles.input}
-            value={password}
-            onChangeText={setPassword}
-            placeholder="••••••••"
-            placeholderTextColor="#94a3b8"
-            secureTextEntry
-            autoCapitalize="none"
-          />
+          <View style={styles.inputRow}>
+            <TextInput
+              style={[styles.input, { flex: 1, borderWidth: 0 }]}
+              value={password}
+              onChangeText={setPassword}
+              placeholder="••••••••"
+              placeholderTextColor="#94a3b8"
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+            />
+            <TouchableOpacity onPress={() => setShowPassword((v) => !v)} style={styles.eyeBtn}>
+              <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color="#94a3b8" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <TouchableOpacity
@@ -98,6 +123,10 @@ export default function LoginScreen({ navigation }: Props) {
           )}
         </TouchableOpacity>
 
+        <TouchableOpacity onPress={() => { setForgotVisible(true); setForgotMsg(null); setForgotIdentifier(''); }}>
+          <Text style={[styles.link, { textAlign: 'center', fontSize: 13 }]}>Forgot password?</Text>
+        </TouchableOpacity>
+
         <View style={styles.footer}>
           <Text style={styles.footerText}>Don't have an account? </Text>
           <TouchableOpacity onPress={() => navigation.navigate('Register')}>
@@ -105,6 +134,48 @@ export default function LoginScreen({ navigation }: Props) {
           </TouchableOpacity>
         </View>
       </View>
+
+      <Modal visible={forgotVisible} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Reset Password</Text>
+            <Text style={styles.modalSub}>Enter your email or username. Your admin will set a temporary password for you.</Text>
+
+            {forgotMsg ? (
+              <View style={styles.infoBox}>
+                <Text style={styles.infoText}>{forgotMsg}</Text>
+              </View>
+            ) : (
+              <>
+                <TextInput
+                  style={styles.input}
+                  value={forgotIdentifier}
+                  onChangeText={setForgotIdentifier}
+                  placeholder="Email or username"
+                  placeholderTextColor="#94a3b8"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <TouchableOpacity
+                  style={[styles.btn, forgotLoading && styles.btnDisabled]}
+                  onPress={handleForgot}
+                  disabled={forgotLoading}
+                >
+                  {forgotLoading ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.btnText}>Submit request</Text>
+                  )}
+                </TouchableOpacity>
+              </>
+            )}
+
+            <TouchableOpacity onPress={() => setForgotVisible(false)} style={{ marginTop: 12 }}>
+              <Text style={[styles.link, { textAlign: 'center' }]}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -177,6 +248,19 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     backgroundColor: '#f8fafc',
   },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+    paddingLeft: 14,
+    paddingRight: 4,
+  },
+  eyeBtn: {
+    padding: 8,
+  },
   btn: {
     backgroundColor: '#6366f1',
     borderRadius: 10,
@@ -205,5 +289,41 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6366f1',
     fontWeight: '700',
+  },
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    gap: 14,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  modalSub: {
+    fontSize: 13,
+    color: '#64748b',
+    lineHeight: 18,
+  },
+  infoBox: {
+    backgroundColor: '#f0fdf4',
+    borderRadius: 10,
+    padding: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#22c55e',
+  },
+  infoText: {
+    color: '#15803d',
+    fontSize: 13,
   },
 });

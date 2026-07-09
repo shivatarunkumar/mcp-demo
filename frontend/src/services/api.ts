@@ -8,21 +8,32 @@ async function authFetch(path: string, options: RequestInit) {
     headers: { 'Content-Type': 'application/json', ...(options.headers ?? {}) },
   });
   const data = await res.json().catch(() => ({ detail: res.statusText }));
-  if (!res.ok) throw new Error(data.detail || `Request failed: ${res.status}`);
+  if (!res.ok) {
+    const detail = Array.isArray(data.detail)
+      ? data.detail.map((e: any) => e.msg ?? JSON.stringify(e)).join(', ')
+      : data.detail;
+    throw new Error(typeof detail === 'string' ? detail : `Request failed: ${res.status}`);
+  }
   return data;
 }
 
-export async function registerUser(email: string, password: string) {
+export async function registerUser(
+  email: string,
+  password: string,
+  first_name?: string,
+  last_name?: string,
+  username?: string,
+) {
   return authFetch('/auth/register', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, first_name, last_name, username }),
   });
 }
 
-export async function loginUser(email: string, password: string) {
+export async function loginUser(identifier: string, password: string) {
   return authFetch('/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ identifier, password }),
   });
 }
 
@@ -44,6 +55,83 @@ export async function rejectUser(token: string, userId: string) {
   return authFetch(`/admin/users/${userId}/reject`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+// ── Access Requests ───────────────────────────────────────────────────────────
+
+export async function getAccessCatalog(token: string) {
+  return authFetch('/access/catalog', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function submitAccessRequest(
+  token: string,
+  payload: { scope_type: string; database_id?: string; table_id?: string; justification?: string; duration_hours?: number }
+) {
+  return authFetch('/access/request', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getMyAccessRequests(token: string) {
+  return authFetch('/access/my-requests', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getAdminAccessRequests(token: string) {
+  return authFetch('/admin/access-requests', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function approveAccessRequest(token: string, requestId: string) {
+  return authFetch(`/admin/access-requests/${requestId}/approve`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function rejectAccessRequest(token: string, requestId: string) {
+  return authFetch(`/admin/access-requests/${requestId}/reject`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getAdminAccessRequestHistory(token: string) {
+  return authFetch('/admin/access-requests/history', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function forgotPassword(identifier: string) {
+  return authFetch('/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ identifier }),
+  });
+}
+
+export async function getAdminPasswordResets(token: string) {
+  return authFetch('/admin/password-resets', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function resolvePasswordReset(token: string, resetId: string, newPassword: string) {
+  return authFetch(`/admin/password-resets/${resetId}/resolve`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ new_password: newPassword }),
   });
 }
 
