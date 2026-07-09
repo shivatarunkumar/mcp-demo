@@ -4,6 +4,36 @@ import { StatusBar } from 'expo-status-bar';
 import React from 'react';
 import { TouchableOpacity, Text, View, StyleSheet } from 'react-native';
 
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  state = { error: null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <View style={eb.container}>
+          <Text style={eb.title}>Something went wrong</Text>
+          <Text style={eb.msg}>{(this.state.error as Error).message}</Text>
+          <TouchableOpacity style={eb.btn} onPress={() => this.setState({ error: null })}>
+            <Text style={eb.btnText}>Try again</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const eb = StyleSheet.create({
+  container: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, backgroundColor: '#fff' },
+  title: { fontSize: 18, fontWeight: '700', color: '#ef4444', marginBottom: 12 },
+  msg: { fontSize: 13, color: '#475569', textAlign: 'center', marginBottom: 24 },
+  btn: { backgroundColor: '#6366f1', borderRadius: 10, paddingHorizontal: 24, paddingVertical: 10 },
+  btnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+});
+
 import LandingScreen from './src/screens/LandingScreen';
 import ChatScreen from './src/screens/ChatScreen';
 import TalkToDataScreen from './src/screens/TalkToDataScreen';
@@ -70,11 +100,13 @@ function AppNavigator() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <NavigationContainer>
-        <AppNavigator />
-      </NavigationContainer>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <NavigationContainer>
+          <AppNavigator />
+        </NavigationContainer>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }
 

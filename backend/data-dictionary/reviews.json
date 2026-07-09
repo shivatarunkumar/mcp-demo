@@ -1,0 +1,12 @@
+{
+  "table": "reviews",
+  "description": "Stores customer reviews for products",
+  "columns": [
+    { "name": "id",          "type": "SERIAL",    "constraints": ["PRIMARY KEY"],              "description": "Unique auto-incrementing review identifier" },
+    { "name": "customer_id", "type": "INT",        "constraints": ["FOREIGN KEY → customers.id"], "description": "References the customer who wrote the review" },
+    { "name": "product_id",  "type": "INT",        "constraints": ["FOREIGN KEY → products.id"],  "description": "References the product being reviewed" },
+    { "name": "rating",      "type": "INT",        "constraints": ["CHECK (1–5)"],             "description": "Star rating from 1 (worst) to 5 (best)" },
+    { "name": "comment",     "type": "TEXT",       "constraints": [],                           "description": "Optional free-text review comment left by the customer" },
+    { "name": "created_at",  "type": "TIMESTAMP",  "constraints": [],                           "description": "Timestamp when the review was submitted" }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "table": "orders",
+  "description": "Stores customer orders",
+  "columns": [
+    { "name": "id",          "type": "SERIAL",        "constraints": ["PRIMARY KEY"],          "description": "Unique auto-incrementing order identifier" },
+    { "name": "customer_id", "type": "INT",            "constraints": ["FOREIGN KEY → customers.id"], "description": "References the customer who placed this order" },
+    { "name": "order_date",  "type": "TIMESTAMP",      "constraints": [],                       "description": "Timestamp when the order was placed (belongs to orders, not transactions)" },
+    { "name": "status",      "type": "VARCHAR",        "constraints": [],                       "description": "Current order status (e.g. pending, shipped, delivered, cancelled)" },
+    { "name": "total",       "type": "DECIMAL(10,2)",  "constraints": [],                       "description": "Total monetary value of the order in dollars" }
+  ]
+}

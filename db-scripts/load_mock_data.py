@@ -17,6 +17,7 @@ FILES = [
     ("products.csv",     "products",     ["id", "name", "category", "price", "stock"]),
     ("orders.csv",       "orders",       ["id", "customer_id", "order_date", "status", "total"]),
     ("transactions.csv", "transactions", ["id", "order_id", "amount", "payment_method", "transaction_date", "status"]),
+    ("reviews.csv",      "reviews",      ["id", "customer_id", "product_id", "rating", "comment", "created_at"]),
 ]
 
 def load_csv(cursor, filename, table, columns):

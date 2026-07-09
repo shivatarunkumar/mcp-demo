@@ -43,6 +43,15 @@ def _build_system_prompt() -> str:
         "- When joining tables, always qualify every column reference with its correct table alias.\n"
         "- Use <> for not-equal comparisons (not !=).\n"
         "- For status filters use the exact values likely stored (e.g. 'failed', 'pending', 'completed').\n\n"
+        "VALID TABLE RELATIONSHIPS (only these joins exist):\n"
+        "- customers → orders:      orders.customer_id = customers.id\n"
+        "- orders → transactions:   transactions.order_id = orders.id\n"
+        "- products is a standalone catalog table. It has NO foreign key to orders, transactions, or customers.\n"
+        "  Do NOT join products with any other table. Do NOT invent columns like product_ids or order_items.\n\n"
+        "QUERY GUIDANCE:\n"
+        "- To find total amount spent by a customer, use SUM(orders.total) — join customers with orders only.\n"
+        "- To find payment totals, use SUM(transactions.amount) — join orders with transactions.\n"
+        "- Product queries (stock, price, category) are independent of order/customer data.\n\n"
         + schema
     )
 
@@ -138,9 +147,26 @@ async def _fetch_schema(db: AsyncSession) -> SchemaResponse:
     return SchemaResponse(database=database, tables=tables)
 
 
+async def _get_db_session(db_name: str | None, default_db: AsyncSession):
+    """Return the default session or a temporary one for db_name."""
+    if not db_name:
+        return default_db, None
+    base_url = settings.database_url.rsplit("/", 1)[0]
+    engine = create_async_engine(f"{base_url}/{db_name}")
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    session = maker()
+    return session, engine
+
+
 @router.post("/", response_model=QueryResponse)
 async def run_query(payload: QueryRequest, db: AsyncSession = Depends(get_db)):
-    return await _execute_sql(payload.sql, db)
+    session, engine = await _get_db_session(payload.db_name, db)
+    try:
+        return await _execute_sql(payload.sql, session)
+    finally:
+        if engine:
+            await session.close()
+            await engine.dispose()
 
 
 @router.get("/databases", response_model=list[str])
@@ -189,8 +215,9 @@ async def nl2sql(payload: NL2SQLRequest, db: AsyncSession = Depends(get_db)):
     if not sql:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="LLM did not return a valid SQL query.")
 
+    session, engine = await _get_db_session(payload.db_name, db)
     try:
-        query_result = await _execute_sql(sql, db)
+        query_result = await _execute_sql(sql, session)
         return NL2SQLResponse(
             question=payload.question,
             sql=sql,
@@ -200,3 +227,7 @@ async def nl2sql(payload: NL2SQLRequest, db: AsyncSession = Depends(get_db)):
         )
     except HTTPException as exc:
         return NL2SQLResponse(question=payload.question, sql=sql, error=exc.detail)
+    finally:
+        if engine:
+            await session.close()
+            await engine.dispose()

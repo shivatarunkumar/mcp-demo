@@ -35,3 +35,13 @@ CREATE TABLE transactions (
   transaction_date TIMESTAMP DEFAULT NOW(),
   status VARCHAR(20)
 );
+
+-- Reviews
+CREATE TABLE reviews (
+  id SERIAL PRIMARY KEY,
+  customer_id INT REFERENCES customers(id),
+  product_id INT REFERENCES products(id),
+  rating INT CHECK (rating BETWEEN 1 AND 5),
+  comment TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);

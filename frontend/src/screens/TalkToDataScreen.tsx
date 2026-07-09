@@ -31,26 +31,25 @@ interface QueryResult {
 
 // ── API helpers ────────────────────────────────────────────────────────────────
 
-async function runSQLQuery(sql: string): Promise<QueryResult> {
+async function runSQLQuery(sql: string, dbName?: string | null): Promise<QueryResult> {
   const res = await fetch(`${BASE_URL}/query/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sql }),
+    body: JSON.stringify({ sql, ...(dbName ? { db_name: dbName } : {}) }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.detail ?? 'Query failed');
   return data;
 }
 
-async function runNLQuery(question: string): Promise<QueryResult> {
+async function runNLQuery(question: string, dbName?: string | null): Promise<QueryResult> {
   const res = await fetch(`${BASE_URL}/query/nl2sql`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, ...(dbName ? { db_name: dbName } : {}) }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.detail ?? 'NL2SQL failed');
-  // Backend returns 200 even on SQL execution failure; error field carries the message
   return data;
 }
 
@@ -133,11 +132,12 @@ export default function TalkToDataScreen() {
   const [sql, setSql] = useState('SELECT * FROM customers LIMIT 10;');
   const [question, setQuestion] = useState('');
   const [result, setResult] = useState<QueryResult | null>(null);
-  const [editableSql, setEditableSql] = useState<string | null>(null); // NL-generated SQL, editable
+  const [editableSql, setEditableSql] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [showSql, setShowSql] = useState(true);
+  const [selectedDb, setSelectedDb] = useState<string | null>(null);
 
   const handleRun = async () => {
     setLoading(true);
@@ -146,10 +146,10 @@ export default function TalkToDataScreen() {
     setEditableSql(null);
     try {
       if (mode === 'sql') {
-        const data = await runSQLQuery(sql);
+        const data = await runSQLQuery(sql, selectedDb);
         setResult(data);
       } else {
-        const data = await runNLQuery(question);
+        const data = await runNLQuery(question, selectedDb);
         setEditableSql(data.sql ?? '');
         if (data.error) {
           setError(data.error);
@@ -169,7 +169,7 @@ export default function TalkToDataScreen() {
     setLoading(true);
     setError(null);
     try {
-      const data = await runSQLQuery(editableSql);
+      const data = await runSQLQuery(editableSql, selectedDb);
       setResult({ ...data, sql: editableSql });
     } catch (e: any) {
       setError(e.message);
@@ -228,7 +228,11 @@ export default function TalkToDataScreen() {
       <View style={[s.sidebarWrapper, sidebarOpen ? { width: sidebarWidth } : { width: 0 }]}>
         {sidebarOpen && (
           <>
-            <DBSchemaPanel onSelectTable={handleSelectTable} />
+            <DBSchemaPanel
+              onSelectTable={handleSelectTable}
+              selectedDb={selectedDb}
+              onSelectDb={(db) => { setSelectedDb(db); setResult(null); setError(null); setEditableSql(null); }}
+            />
             {/* Drag-resize handle on right edge */}
             {Platform.OS === 'web' && (
               <View
@@ -343,6 +347,16 @@ export default function TalkToDataScreen() {
         {error && (
           <View style={s.errorBox}>
             <Text style={s.errorText}>{error}</Text>
+            <TouchableOpacity
+              style={[s.retryBtn, loading && s.runBtnDisabled]}
+              onPress={handleRun}
+              disabled={loading}
+            >
+              {loading
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={s.retryBtnText}>↺  Retry</Text>
+              }
+            </TouchableOpacity>
           </View>
         )}
 
@@ -759,8 +773,10 @@ function makeStyles(t: Theme) {
     runBtnDisabled: { backgroundColor: t.dark ? '#4338ca' : '#a5b4fc' },
     runBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 
-    errorBox: { backgroundColor: t.errorBg, borderRadius: 10, padding: 14, borderLeftWidth: 4, borderLeftColor: '#ef4444' },
+    errorBox: { backgroundColor: t.errorBg, borderRadius: 10, padding: 14, borderLeftWidth: 4, borderLeftColor: '#ef4444', gap: 10 },
     errorText: { color: t.errorText, fontSize: 13 },
+    retryBtn: { alignSelf: 'flex-start', backgroundColor: '#ef4444', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 7 },
+    retryBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 
     resultMeta: { fontSize: 13, color: t.textSub, fontWeight: '600' },
     tableRow: { flexDirection: 'row' },

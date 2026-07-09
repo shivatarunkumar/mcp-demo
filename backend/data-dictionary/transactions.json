@@ -1,0 +1,12 @@
+{
+  "table": "transactions",
+  "description": "Stores payment transactions linked to orders",
+  "columns": [
+    { "name": "id",               "type": "SERIAL",        "constraints": ["PRIMARY KEY"],       "description": "Unique auto-incrementing transaction identifier" },
+    { "name": "order_id",         "type": "INT",            "constraints": ["FOREIGN KEY → orders.id"], "description": "References the order this payment belongs to" },
+    { "name": "amount",           "type": "DECIMAL(10,2)",  "constraints": [],                    "description": "Amount charged in this transaction in dollars" },
+    { "name": "payment_method",   "type": "VARCHAR",        "constraints": [],                    "description": "Payment method used (e.g. credit_card, paypal, bank_transfer)" },
+    { "name": "transaction_date", "type": "TIMESTAMP",      "constraints": [],                    "description": "Timestamp when this payment was processed (use transaction_date, NOT order_date)" },
+    { "name": "status",           "type": "VARCHAR",        "constraints": [],                    "description": "Payment status (e.g. success, failed, pending, refunded)" }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "table": "products",
+  "description": "Stores product catalog information",
+  "columns": [
+    { "name": "id",       "type": "SERIAL",        "constraints": ["PRIMARY KEY"], "description": "Unique auto-incrementing product identifier" },
+    { "name": "name",     "type": "VARCHAR",        "constraints": [],              "description": "Display name of the product" },
+    { "name": "category", "type": "VARCHAR",        "constraints": [],              "description": "Product category (e.g. Electronics, Clothing)" },
+    { "name": "price",    "type": "DECIMAL(10,2)",  "constraints": [],              "description": "Retail price of the product in dollars" },
+    { "name": "stock",    "type": "INT",             "constraints": [],              "description": "Number of units currently available in inventory" }
+  ]
+}

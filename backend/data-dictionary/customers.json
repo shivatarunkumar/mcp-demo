@@ -1,0 +1,12 @@
+{
+  "table": "customers",
+  "description": "Stores customer profile information",
+  "columns": [
+    { "name": "id",         "type": "SERIAL",    "constraints": ["PRIMARY KEY"], "description": "Unique auto-incrementing customer identifier" },
+    { "name": "name",       "type": "VARCHAR",   "constraints": [],              "description": "Full name of the customer" },
+    { "name": "email",      "type": "VARCHAR",   "constraints": [],              "description": "Customer's email address" },
+    { "name": "phone",      "type": "VARCHAR",   "constraints": [],              "description": "Customer's phone number" },
+    { "name": "city",       "type": "VARCHAR",   "constraints": [],              "description": "City where the customer is located" },
+    { "name": "created_at", "type": "TIMESTAMP", "constraints": [],              "description": "Timestamp when the customer record was created" }
+  ]
+}

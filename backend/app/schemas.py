@@ -118,6 +118,7 @@ class ChatResponse(BaseModel):
 
 class QueryRequest(BaseModel):
     sql: str
+    db_name: str | None = None
 
 
 class QueryResponse(BaseModel):
@@ -131,6 +132,7 @@ class QueryResponse(BaseModel):
 class NL2SQLRequest(BaseModel):
     question: str
     model: str | None = None
+    db_name: str | None = None
 
 
 class NL2SQLResponse(BaseModel):

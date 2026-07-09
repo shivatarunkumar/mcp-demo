@@ -54,3 +54,17 @@ class Transaction(Base):
     status: Mapped[str | None] = mapped_column(String(20))
 
     order: Mapped["Order"] = relationship("Order", back_populates="transactions")
+
+
+class Review(Base):
+    __tablename__ = "reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    customer_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("customers.id"))
+    product_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("products.id"))
+    rating: Mapped[int | None] = mapped_column(Integer)
+    comment: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime | None] = mapped_column(TIMESTAMP, server_default=func.now())
+
+    customer: Mapped["Customer"] = relationship("Customer")
+    product: Mapped["Product"] = relationship("Product")

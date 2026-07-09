@@ -36,14 +36,15 @@ interface SchemaResponse {
 
 interface Props {
   onSelectTable?: (tableName: string) => void;
+  selectedDb: string | null;
+  onSelectDb: (db: string) => void;
 }
 
-export default function DBSchemaPanel({ onSelectTable }: Props) {
+export default function DBSchemaPanel({ onSelectTable, selectedDb, onSelectDb }: Props) {
   const { theme: t } = useTheme();
   const s = makeStyles(t);
 
   const [databases, setDatabases] = useState<string[]>([]);
-  const [selectedDb, setSelectedDb] = useState<string | null>(null);
   const [dbMenuOpen, setDbMenuOpen] = useState(false);
   const [dbMenuPos, setDbMenuPos] = useState({ top: 0, left: 0 });
   const dbBtnRef = useRef<View>(null);
@@ -75,8 +76,9 @@ export default function DBSchemaPanel({ onSelectTable }: Props) {
         return data as SchemaResponse;
       })
       .then((d) => {
-        setSchema(d);
-        if (d.tables?.length > 0) setExpanded({ [d.tables[0].name]: true });
+        const safe = { ...d, tables: d.tables ?? [] };
+        setSchema(safe);
+        if (safe.tables.length > 0) setExpanded({ [safe.tables[0].name]: true });
         else setExpanded({});
       })
       .catch((e) => setError(e.message))
@@ -129,7 +131,7 @@ export default function DBSchemaPanel({ onSelectTable }: Props) {
                     style={[s.dbMenuItem, active && s.dbMenuItemActive]}
                     onPress={() => {
                       setDbMenuOpen(false);
-                      if (!active) { setSelectedDb(db); setSchema(null); setExpanded({}); }
+                      if (!active) { onSelectDb(db); setSchema(null); setExpanded({}); }
                     }}
                   >
                     {active && <Text style={s.dbMenuCheck}>✓</Text>}
@@ -145,9 +147,9 @@ export default function DBSchemaPanel({ onSelectTable }: Props) {
       {/* ── Stats bar ── */}
       {schema && (
         <View style={s.statsBar}>
-          <StatPill label="Tables" value={String(schema.tables.length)} s={s} />
-          <StatPill label="Rows" value={schema.tables.reduce((a, t) => a + t.row_count, 0).toLocaleString()} s={s} />
-          <StatPill label="Cols" value={String(schema.tables.reduce((a, t) => a + t.columns.length, 0))} s={s} />
+          <StatPill label="Tables" value={String(schema.tables?.length ?? 0)} s={s} />
+          <StatPill label="Rows" value={(schema.tables ?? []).reduce((a, tbl) => a + (tbl.row_count ?? 0), 0).toLocaleString()} s={s} />
+          <StatPill label="Cols" value={String((schema.tables ?? []).reduce((a, tbl) => a + (tbl.columns?.length ?? 0), 0))} s={s} />
         </View>
       )}
 
@@ -172,7 +174,7 @@ export default function DBSchemaPanel({ onSelectTable }: Props) {
         </View>
       ) : (
         <ScrollView style={s.tableList} showsVerticalScrollIndicator={false}>
-          {schema!.tables.map((table) => (
+          {(schema?.tables ?? []).map((table) => (
             <TableRow
               key={table.name}
               table={table}
@@ -210,6 +212,20 @@ function TableRow({
   onToggle: () => void;
   onSelect?: (name: string) => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
+  const dotsRef = useRef<View>(null);
+
+  const openMenu = () => {
+    dotsRef.current?.measureInWindow((x, y, w, h) => {
+      setMenuPos({
+        top: y + h + 4,
+        right: Platform.OS === 'web' ? window.innerWidth - x - w : 16,
+      });
+    });
+    setMenuOpen(true);
+  };
+
   return (
     <View style={[s.tableBlock, { borderLeftColor: t.accent }]}>
       <TouchableOpacity style={s.tableHeader} onPress={onToggle} activeOpacity={0.75}>
@@ -220,15 +236,34 @@ function TableRow({
           <Text style={s.tableCount}>{table.row_count.toLocaleString()} rows</Text>
         </View>
         {onSelect && (
-          <TouchableOpacity
-            onPress={() => onSelect(table.name)}
-            style={[s.queryBtn, { backgroundColor: t.accentBg, borderColor: t.accentBorder }]}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Text style={[s.queryBtnText, { color: t.accent }]}>Query</Text>
-          </TouchableOpacity>
+          <View ref={dotsRef}>
+            <TouchableOpacity
+              onPress={(e) => { e.stopPropagation?.(); openMenu(); }}
+              style={s.dotsBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={[s.dotsBtnText, { color: t.accent }]}>⋮</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </TouchableOpacity>
+
+      {/* Dots context menu */}
+      <Modal transparent visible={menuOpen} animationType="none" onRequestClose={() => setMenuOpen(false)}>
+        <TouchableWithoutFeedback onPress={() => setMenuOpen(false)}>
+          <View style={StyleSheet.absoluteFill}>
+            <View style={[s.dotsMenu, { top: menuPos.top, right: menuPos.right }, { backgroundColor: t.surface, borderColor: t.border }]}>
+              <TouchableOpacity
+                style={s.dotsMenuItem}
+                onPress={() => { setMenuOpen(false); onSelect!(table.name); }}
+              >
+                <Text style={[s.dotsMenuIcon, { color: t.accent }]}>▶</Text>
+                <Text style={[s.dotsMenuText, { color: t.text }]}>Select this table</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
 
       {open && (
         <View style={s.colList}>
@@ -322,8 +357,17 @@ function makeStyles(t: Theme) {
     tableNamePill: { alignSelf: 'flex-start', borderWidth: 1, borderRadius: 5, paddingHorizontal: 7, paddingVertical: 2 },
     tableName: { fontSize: 12, fontWeight: '800' },
     tableCount: { fontSize: 10, color: t.textMuted, marginLeft: 1 },
-    queryBtn: { borderWidth: 1, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
-    queryBtnText: { fontSize: 10, fontWeight: '800' },
+    dotsBtn: { paddingHorizontal: 6, paddingVertical: 2 },
+    dotsBtnText: { fontSize: 18, fontWeight: '900', letterSpacing: 0 },
+    dotsMenu: {
+      position: 'absolute', borderRadius: 10, borderWidth: 1,
+      shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 12,
+      shadowOffset: { width: 0, height: 4 }, elevation: 10,
+      minWidth: 170, paddingVertical: 4, zIndex: 999,
+    },
+    dotsMenuItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 10 },
+    dotsMenuIcon: { fontSize: 10, fontWeight: '800' },
+    dotsMenuText: { fontSize: 13, fontWeight: '600' },
 
     colList: { paddingLeft: 22, paddingRight: 10, paddingBottom: 8, borderTopWidth: 1, borderTopColor: t.border },
     colRow: { paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: t.dark ? '#1e293b' : '#f8fafc', gap: 2 },
