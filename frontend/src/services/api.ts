@@ -1,5 +1,52 @@
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
 
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+async function authFetch(path: string, options: RequestInit) {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...(options.headers ?? {}) },
+  });
+  const data = await res.json().catch(() => ({ detail: res.statusText }));
+  if (!res.ok) throw new Error(data.detail || `Request failed: ${res.status}`);
+  return data;
+}
+
+export async function registerUser(email: string, password: string) {
+  return authFetch('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export async function loginUser(email: string, password: string) {
+  return authFetch('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export async function getPendingUsers(token: string) {
+  return authFetch('/admin/users/pending', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function approveUser(token: string, userId: string) {
+  return authFetch(`/admin/users/${userId}/approve`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function rejectUser(token: string, userId: string) {
+  return authFetch(`/admin/users/${userId}/reject`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant';

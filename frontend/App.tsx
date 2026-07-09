@@ -35,20 +35,40 @@ const eb = StyleSheet.create({
 });
 
 import LandingScreen from './src/screens/LandingScreen';
+import LoginScreen from './src/screens/LoginScreen';
+import RegisterScreen from './src/screens/RegisterScreen';
 import ChatScreen from './src/screens/ChatScreen';
 import TalkToDataScreen from './src/screens/TalkToDataScreen';
+import AdminScreen from './src/screens/AdminScreen';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
+import { AuthProvider, useAuth } from './src/context/AuthContext';
 
 export type RootStackParamList = {
+  Login: undefined;
+  Register: undefined;
   Landing: undefined;
   Chat: undefined;
   TalkToData: undefined;
+  Admin: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 function AppNavigator() {
   const { theme, toggle } = useTheme();
+  const { token, user } = useAuth();
+
+  if (!token) {
+    return (
+      <>
+        <StatusBar style="dark" />
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="Register" component={RegisterScreen} />
+        </Stack.Navigator>
+      </>
+    );
+  }
 
   return (
     <>
@@ -93,6 +113,13 @@ function AppNavigator() {
             ),
           }}
         />
+        {user?.role === 'admin' && (
+          <Stack.Screen
+            name="Admin"
+            component={AdminScreen}
+            options={{ title: 'Admin — User Approvals' }}
+          />
+        )}
       </Stack.Navigator>
     </>
   );
@@ -101,11 +128,13 @@ function AppNavigator() {
 export default function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider>
-        <NavigationContainer>
-          <AppNavigator />
-        </NavigationContainer>
-      </ThemeProvider>
+      <AuthProvider>
+        <ThemeProvider>
+          <NavigationContainer>
+            <AppNavigator />
+          </NavigationContainer>
+        </ThemeProvider>
+      </AuthProvider>
     </ErrorBoundary>
   );
 }

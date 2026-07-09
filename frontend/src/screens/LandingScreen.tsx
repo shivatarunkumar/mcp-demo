@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { RootStackParamList } from '../../App';
+import { useAuth } from '../context/AuthContext';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Landing'>;
@@ -18,8 +19,18 @@ const { width } = Dimensions.get('window');
 const CARD_WIDTH = Platform.OS === 'web' ? 320 : width * 0.82;
 
 export default function LandingScreen({ navigation }: Props) {
+  const { user, logout } = useAuth();
+
   return (
     <View style={styles.container}>
+      {/* Top bar */}
+      <View style={styles.topBar}>
+        <Text style={styles.userEmail}>{user?.email}</Text>
+        <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.8}>
+          <Text style={styles.logoutText}>Sign out</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Hero */}
       <View style={styles.hero}>
         <Text style={styles.badge}>Powered by AI</Text>
@@ -45,6 +56,15 @@ export default function LandingScreen({ navigation }: Props) {
           accent="#0ea5e9"
           onPress={() => navigation.navigate('Chat')}
         />
+        {user?.role === 'admin' && (
+          <OptionCard
+            emoji="🛡️"
+            title="Admin Panel"
+            description="Review and approve pending user registrations."
+            accent="#f59e0b"
+            onPress={() => navigation.navigate('Admin')}
+          />
+        )}
       </View>
 
       <Text style={styles.footer}>mcp-demo · retail intelligence</Text>
@@ -89,6 +109,33 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 20,
     gap: 40,
+  },
+
+  topBar: {
+    position: 'absolute' as const,
+    top: 16,
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  userEmail: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  logoutBtn: {
+    backgroundColor: '#f1f5f9',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  logoutText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748b',
   },
 
   hero: { alignItems: 'center', gap: 10 },
